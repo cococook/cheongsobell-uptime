@@ -1,0 +1,27 @@
+# 청소벨 운영 감시 — 10분마다. 실패하면 GitHub 이 이 저장소 cron 을 마지막으로 고친 계정(cococook)에 메일을 보낸다.
+# /boards/precheck 는 서버에서 API·DB 를 거쳐 그려지므로 200 이면 web·api·db 가 함께 살아 있다.
+name: uptime
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 사이트·관리자·API(DB) 응답
+        run: |
+          fail=0
+          for u in https://cheongsobell.co.kr/ https://cheongsobell.co.kr/boards/precheck https://admin.cheongsobell.co.kr/login; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' --retry 2 --retry-delay 10 -m 20 "$u")
+            echo "$c $u"; [ "$c" = 200 ] || fail=1
+          done
+          exit $fail
+      - name: 인증서 만료 14일 전 경고
+        run: |
+          for h in cheongsobell.co.kr admin.cheongsobell.co.kr; do
+            end=$(echo | openssl s_client -connect $h:443 -servername $h 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2)
+            days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+            echo "$h 인증서 남은 일수 $days"; [ "$days" -ge 14 ] || exit 1
+          done
